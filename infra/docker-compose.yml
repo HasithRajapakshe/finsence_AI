@@ -1,0 +1,114 @@
+# FinSense AI — Sprint 1 base infrastructure.
+# Exit criteria (Development Plan, Sprint 1): all containers below must run
+# via `docker compose up`. Agent services beyond api-gateway/orchestrator are
+# added to this file incrementally as they're built in Sprints 2+.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: finsense-postgres
+    environment:
+      POSTGRES_USER: finsense
+      POSTGRES_PASSWORD: finsense
+      POSTGRES_DB: finsense
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finsense"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: finsense-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: finsense-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api-gateway:
+    build:
+      context: ../services/api-gateway
+    container_name: finsense-api-gateway
+    env_file:
+      - ../services/api-gateway/.env.example
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  orchestrator:
+    build:
+      context: ../services/orchestrator
+    container_name: finsense-orchestrator
+    env_file:
+      - ../services/orchestrator/.env.example
+    ports:
+      - "8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  kyc-mcp-server:
+    build:
+      context: ../mcp-servers/kyc-mcp-server
+    container_name: finsense-kyc-mcp-server
+    env_file:
+      - ../mcp-servers/kyc-mcp-server/.env.example
+    ports:
+      - "9001:9001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  crib-mcp-server:
+    build:
+      context: ../mcp-servers/crib-mcp-server
+    container_name: finsense-crib-mcp-server
+    env_file:
+      - ../mcp-servers/crib-mcp-server/.env.example
+    ports:
+      - "9002:9002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  demo-ui:
+    build:
+      context: ../apps/demo-ui
+    container_name: finsense-demo-ui
+    environment:
+      NEXT_PUBLIC_API_GATEWAY_URL: http://localhost:8000
+    ports:
+      - "8081:3000"
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:
+  qdrant_data:
